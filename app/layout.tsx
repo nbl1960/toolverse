@@ -32,6 +32,10 @@ const fontMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
+  verification: {
+   google: "oa2BFUanVORqyy5u5K5uj6rspoSKPImomaTN3d77QIk",
+},
+
   title: {
     default: `${SITE_NAME} — A Growing Catalog of Focused Web Tools`,
     template: `%s · ${SITE_NAME}`,
