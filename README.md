@@ -1,0 +1,408 @@
+# ToolVerse
+
+A scalable, production-ready platform for hosting many focused web tools
+under one roof. Ships today with **10 live tools** — AI Email Writer plus a
+complete "Phase 1 Finance" suite of 9 calculators — and
+an architecture designed to grow to 100+ tools without touching routing
+code.
+
+Built with Next.js 15 (App Router), React, TypeScript, Tailwind CSS,
+shadcn/ui-style components, and the Anthropic API.
+
+---
+
+## The core idea: one registry, generic routes
+
+Every tool is one object in `lib/tools-registry.ts`:
+
+```ts
+{
+  slug: "email-writer",
+  name: "AI Email Writer",
+  tagline: "Write the email. We'll find the words.",
+  description: "...",
+  category: "writing",
+  icon: Mail,
+  keywords: ["email", "writer", "ai"],
+  status: "live",
+  loadComponent: () =>
+    import("@/components/tools/email-writer/email-writer").then((m) => ({
+      default: m.EmailWriter,
+    })),
+}
+```
+
+`app/tools/[slug]/page.tsx` is the **only** route file for tool pages. It
+looks the slug up in the registry, generates SEO metadata, breadcrumbs, and
+a JSON-LD `SoftwareApplication` entry from that one object, and lazily
+loads the tool's component. `generateStaticParams` pre-renders a static
+page per tool at build time. Adding tool #101 means:
+
+1. Add one object to `TOOLS` in `lib/tools-registry.ts`.
+2. Drop its UI under `components/tools/<slug>/`.
+3. Nothing else. No new route, no new page, no duplicated layout, header,
+   breadcrumbs, or SEO code.
+
+Categories work the same way: `lib/categories.ts` is the registry,
+`app/categories/[category]/page.tsx` is the one generic route.
+
+---
+
+## Features
+
+**Platform**
+- Homepage with hero, category grid, and a data-driven "Recently added" rail
+- `/tools` — searchable, filterable catalog of every tool
+- `/categories` and `/categories/[category]` — browse by category
+- Global header with nav, ⌘K command-palette search, mobile menu, theme toggle
+- Footer with category and live-tool shortcuts
+- Reusable `ToolPageShell` layout (breadcrumbs → title block → tool UI →
+  formula → worked example → FAQ → feedback → related tools) that every
+  tool page renders through — a tool gets all of this for free just by
+  populating the matching fields on its registry entry
+- `ToolCard` and `CategoryCard` — one implementation, used everywhere
+- Related Tools rail (same-category tools, with sensible fallback)
+- Shared SEO layer: `lib/seo.ts` (metadata builder) + `<JsonLd>` component
+  (WebSite, SoftwareApplication + Calculator subcategory, FAQPage,
+  BreadcrumbList schemas) used by every route; per-tool dynamic OG images
+- Full dark/light mode, fully responsive, accessible (landmarks,
+  `aria-current`, visible focus rings, `prefers-reduced-motion`)
+
+**Tool #1 — AI Email Writer** (Writing)
+Topic/recipient/sender inputs, 8 tones, 3 lengths, server-side generation
+via the Anthropic API with zod validation and rate limiting.
+
+**Tools #2–10 — the Phase 1 Finance suite**
+
+| Tool | Route | What it solves |
+|---|---|---|
+| EMI Calculator | `/tools/emi-calculator` | Loan amount + rate + tenure → monthly payment |
+| SIP Calculator | `/tools/sip-calculator` | Monthly investment → projected corpus, with optional step-up and inflation adjustment |
+| Loan Calculator | `/tools/loan-calculator` | EMI Calculator's math, plus a second mode: solve loan amount from an EMI budget |
+| FD Calculator | `/tools/fd-calculator` | Lump-sum deposit → maturity value, with selectable compounding frequency |
+| RD Calculator | `/tools/rd-calculator` | Monthly bank deposit → maturity value |
+| SWP Calculator | `/tools/swp-calculator` | Lump sum + fixed monthly withdrawal → balance over time, flags early depletion |
+| Compound Interest Calculator | `/tools/compound-interest-calculator` | General-purpose lump-sum compounding (same engine as FD) |
+| Retirement Calculator | `/tools/retirement-calculator` | Current savings + monthly contribution → projected retirement corpus |
+| CAGR Calculator | `/tools/cagr-calculator` | Initial + final value → smoothed annual growth rate |
+
+Every finance tool ships with: live or explicit-Calculate results (EMI/FD/RD/
+Loan/SWP/Compound Interest/Retirement/CAGR update live; SIP uses an explicit
+Calculate/Reset flow), summary cards, at least one chart, a period-by-period
+schedule table with CSV export, Share + Copy Results, a formula explanation,
+a worked example, an FAQ (with FAQPage JSON-LD), and a feedback widget — all
+via the shared components below, not reimplemented per tool.
+
+**The shared finance layer this suite is built on**
+
+- `lib/finance/loan.ts` — reducing-balance loan engine. Both EMI Calculator
+  and Loan Calculator call this; EMI's own `calculateEmi()` was refactored
+  to delegate to it internally (same external API, zero duplicate math).
+- `lib/finance/annuity.ts` — recurring-contribution engine (optional
+  starting lump sum, optional step-up, optional inflation adjustment).
+  Powers SIP, RD, and Retirement; SIP's own `calculateSip()` now delegates
+  to it the same way EMI does to `loan.ts`.
+- `lib/finance/withdrawal.ts` — systematic withdrawal engine (SWP), flags
+  the month a corpus depletes if the withdrawal rate outpaces returns.
+- `lib/finance/interest.ts` — compound-interest engine with selectable
+  compounding frequency. Powers both FD and Compound Interest Calculator.
+- `lib/finance/cagr.ts` — CAGR engine, plus an implied year-by-year growth
+  projection for charting.
+- `lib/finance/currency.ts` / `format.ts` — shared currency/percent/tenure
+  formatting used by every tool's summary cards and Copy/Share text.
+- `lib/finance/validation.ts` — shared numeric-range field builder and
+  tenure-bounds check, reused by every tool's zod schema.
+- `lib/finance/chart-colors.ts` — theme-aware chart color, tooltip, and
+  legend tokens (`hsl(var(--...))`), so every chart in every tool follows
+  dark/light mode automatically.
+- `components/shared/finance/` — `<SummaryCards>`, `<ScheduleTable>`
+  (generic, typed, with CSV export built in), `<CompositionDonutChart>`,
+  `<GrowthAreaChart>` (one or more area/line series), `<YearlyBarChart>` —
+  five presentational primitives that all 9 finance tools configure with
+  data rather than reimplement.
+- `components/shared/tenure-toggle.tsx` — the Months/Years control, shared
+  by every tool with a period input.
+- `components/shared/formula-section.tsx` / `example-calculation.tsx` /
+  `feedback-section.tsx` / `faq.tsx` / `share-actions.tsx` — rendered
+  automatically by `ToolPageShell` from `formula` / `example` / `faq`
+  fields on a tool's registry entry; a tool opts in by adding data, never
+  by writing new section markup.
+- `lib/csv-export.ts` — `arrayToCsv` / `downloadCsv`, used by every
+  schedule table via `<ScheduleTable>`.
+- `addedAt` on every `ToolDefinition` powers `getRecentlyAddedTools()`,
+  which drives the homepage's "Recently added" rail automatically.
+- `isCalculator: true` adds `applicationSubCategory: "Calculator"` to a
+  tool's JSON-LD automatically.
+
+---
+
+## Folder structure
+
+```
+toolverse/
+├── app/
+│   ├── api/
+│   │   └── tools/
+│   │       └── email-writer/
+│   │           └── generate/route.ts   # Tool-scoped API route
+│   ├── categories/
+│   │   ├── page.tsx                     # All categories
+│   │   └── [category]/page.tsx          # One generic category route
+│   ├── tools/
+│   │   ├── page.tsx                     # All tools (search + filter)
+│   │   └── [slug]/
+│   │       ├── page.tsx                 # One generic tool route
+│   │       └── opengraph-image.tsx      # Per-tool OG image
+│   ├── layout.tsx                        # Root layout: Header, Footer, providers
+│   ├── page.tsx                          # Homepage (categories + recently added)
+│   ├── globals.css                       # Design tokens (light/dark)
+│   ├── icon.tsx / opengraph-image.tsx    # Generated site-wide images
+│   ├── robots.ts / sitemap.ts            # SEO — includes every tool/category
+│   ├── loading.tsx / error.tsx / not-found.tsx
+├── components/
+│   ├── layout/
+│   │   ├── header.tsx
+│   │   ├── footer.tsx
+│   │   ├── search.tsx                    # ⌘K command palette
+│   │   ├── mobile-nav.tsx
+│   │   └── tool-page-shell.tsx           # Reusable layout for every tool page
+│   │                                        (renders formula/FAQ/feedback
+│   │                                         automatically when present)
+│   ├── shared/
+│   │   ├── tool-card.tsx
+│   │   ├── category-card.tsx
+│   │   ├── breadcrumbs.tsx
+│   │   ├── related-tools.tsx
+│   │   ├── tools-browser.tsx             # Search/filter grid for /tools
+│   │   ├── tenure-toggle.tsx             # Shared Months/Years control
+│   │   ├── formula-section.tsx           # Shared formula explanation block
+│   │   ├── example-calculation.tsx       # Shared worked-example block
+│   │   ├── feedback-section.tsx          # Shared "was this helpful?" widget
+│   │   ├── faq.tsx                       # Shared FAQ accordion
+│   │   ├── share-actions.tsx             # Shared Share + Copy Results
+│   │   ├── json-ld.tsx                   # Shared SEO structured-data component
+│   │   └── finance/                      # Shared finance PRESENTATION components
+│   │       ├── summary-cards.tsx         # Generic result-card grid
+│   │       ├── schedule-table.tsx        # Generic period-by-period table + CSV
+│   │       ├── composition-donut-chart.tsx
+│   │       ├── growth-area-chart.tsx     # 1+ area/line series over time
+│   │       └── yearly-bar-chart.tsx      # Grouped bar comparison
+│   ├── tools/
+│   │   ├── email-writer/                 # Tool #1's UI — namespaced, self-contained
+│   │   │   ├── email-writer.tsx
+│   │   │   ├── email-output.tsx
+│   │   │   ├── tone-selector.tsx
+│   │   │   └── length-selector.tsx
+│   │   ├── emi-calculator/               # Each finance tool follows the same shape:
+│   │   │   ├── emi-calculator.tsx        #   <slug>.tsx        — orchestrator, wires the
+│   │   │   └── emi-inputs-form.tsx       #                       shared finance components
+│   │   │   └── <slug>-inputs-form.tsx    #   <slug>-inputs-form.tsx — the input fields
+│   │   ├── sip-calculator/               # (SIP additionally has its own summary-cards.tsx
+│   │   │   └── ...                       #  and charts.tsx, predating the shared primitives —
+│   │   ├── loan-calculator/              #  preserved as-is rather than retrofitted)
+│   │   ├── fd-calculator/
+│   │   ├── rd-calculator/
+│   │   ├── swp-calculator/
+│   │   ├── compound-interest-calculator/
+│   │   ├── retirement-calculator/
+│   │   └── cagr-calculator/
+│   ├── theme-provider.tsx
+│   ├── theme-toggle.tsx
+│   └── ui/                               # Reusable primitives (button, dialog, select, ...)
+├── hooks/
+│   └── tools/
+│       ├── email-writer/use-email-generator.ts
+│       └── <slug>/use-<slug>.ts          # One state hook per tool, same pattern throughout
+├── lib/
+│   ├── tools-registry.ts                 # THE catalog — single source of truth (10 tools)
+│   ├── categories.ts                     # THE category list (incl. Finance)
+│   ├── seo.ts                            # Shared metadata builder
+│   ├── structured-data.ts                # JSON-LD builders (FAQPage, Calculator subcategory)
+│   ├── breadcrumbs.ts                    # Shared breadcrumb-trail builder
+│   ├── csv-export.ts                     # Shared CSV helpers
+│   ├── finance/                          # Shared finance CALCULATION engines + formatting
+│   │   ├── types.ts                      # TenureUnit + toMonths()
+│   │   ├── currency.ts                   # formatCurrency / formatPercent
+│   │   ├── format.ts                     # formatTenureText + re-exports currency helpers
+│   │   ├── validation.ts                 # numberRangeField, tenure-bounds helpers
+│   │   ├── chart-colors.ts               # Theme-aware chart color/tooltip/legend tokens
+│   │   ├── loan.ts                       # Reducing-balance loan engine (EMI + Loan Calculator)
+│   │   ├── annuity.ts                    # Recurring-contribution engine (SIP + RD + Retirement)
+│   │   ├── withdrawal.ts                 # Systematic withdrawal engine (SWP)
+│   │   ├── interest.ts                   # Compound-interest engine (FD + Compound Interest)
+│   │   └── cagr.ts                       # CAGR engine (CAGR Calculator)
+│   ├── site-config.ts                    # Site name/tagline/URL
+│   ├── types.ts                          # Platform-wide types (ToolDefinition, FaqItem, ...)
+│   ├── utils.ts                          # cn(), clipboard, char count
+│   └── tools/
+│       ├── email-writer/{constants,types,validations}.ts
+│       └── <slug>/                       # Each finance tool: a thin domain layer that
+│           ├── calculations.ts           #   delegates its math to lib/finance/*.ts
+│           ├── constants.ts              #   (defaults, limits, FAQ, formula, example)
+│           ├── format.ts                 #   (result-summary text; currency reused)
+│           ├── types.ts
+│           └── validations.ts
+├── public/
+├── .env.example
+├── components.json                        # shadcn/ui config
+├── next.config.mjs
+├── package.json
+├── tailwind.config.ts
+└── tsconfig.json
+```
+
+**Namespacing rule:** anything specific to one tool lives under a
+`<domain>/tools/<slug>/` folder (`lib/tools/email-writer/`,
+`components/tools/email-writer/`, `hooks/tools/email-writer/`,
+`app/api/tools/email-writer/`). Anything shared across the whole platform
+lives at the top level of `lib/`, `components/layout/`, or
+`components/shared/`. This is what keeps 100 tools from colliding on
+file names or duplicating layout code — and it's why adding 7 finance
+tools in one pass only required *one* new calculation engine per genuinely
+distinct kind of math (loan, annuity, withdrawal, compound interest,
+CAGR), not seven.
+
+---
+
+## Adding a new tool (walkthrough)
+
+1. Create `components/tools/<slug>/<slug>.tsx` exporting your tool's root
+   component (client component, same pattern as `EmailWriter`).
+2. If it needs domain types/constants/validation, add
+   `lib/tools/<slug>/{types,constants,validations}.ts`. For a calculator,
+   put the actual math in a shared `lib/finance/<topic>.ts` engine if the
+   same calculation could plausibly power more than one tool (interest,
+   annuities, and loan amortization all already have one) — the tool's own
+   `calculations.ts` should just adapt the shared engine's result, the way
+   every finance tool in this repo does.
+3. If it needs a backend, add `app/api/tools/<slug>/.../route.ts`.
+4. Register it in `lib/tools-registry.ts`. `addedAt` is required — every
+   tool needs one so `getRecentlyAddedTools()` can sort correctly:
+   ```ts
+   {
+     slug: "your-tool",
+     name: "Your Tool",
+     tagline: "...",
+     description: "...",
+     category: "developer", // must match a slug in lib/categories.ts
+     icon: SomeLucideIcon,
+     keywords: ["..."],
+     status: "live",
+     addedAt: "2026-08-01", // ISO date — required, drives "Recently added"
+     loadComponent: () =>
+       import("@/components/tools/your-tool/your-tool").then((m) => ({
+         default: m.YourTool,
+       })),
+     // All optional. Add any of these and ToolPageShell renders the
+     // matching section automatically — no new component code needed:
+     // faq: YourToolFaqItems,
+     // formula: YourToolFormula,
+     // example: YourToolExample,
+     // applicationCategory: "FinanceApplication",
+     // isCalculator: true, // adds the Calculator JSON-LD subcategory
+   }
+   ```
+5. Done. It now has a page at `/tools/your-tool`, shows up on the
+   homepage's category grid and "Recently added" rail, `/tools`,
+   its category page, related-tools rails, search, the sitemap, and gets
+   its own OG image — automatically.
+
+---
+
+## Prerequisites
+
+- Node.js **18.18+** (Node 20 LTS recommended)
+- npm 9+
+- An [Anthropic API key](https://console.anthropic.com/settings/keys) (used
+  by the Email Writer tool)
+
+## 1. Install
+
+```bash
+npm install
+```
+
+## 2. Configure environment variables
+
+```bash
+cp .env.example .env.local
+```
+
+```env
+# .env.local
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+# Optional — used for SEO metadata (Open Graph URLs, sitemap, robots.txt)
+NEXT_PUBLIC_SITE_URL=https://your-domain.com
+```
+
+`ANTHROPIC_API_KEY` is read only on the server, inside
+`app/api/tools/email-writer/generate/route.ts` — never exposed to the browser.
+
+## 3. Run the dev server
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## 4. Type-check and lint
+
+```bash
+npm run typecheck
+npm run lint
+```
+
+## 5. Build for production
+
+```bash
+npm run build
+npm run start
+```
+
+---
+
+## Deploying to Vercel
+
+### Option A — Vercel CLI
+
+```bash
+npm i -g vercel
+vercel
+vercel env add ANTHROPIC_API_KEY
+vercel --prod
+```
+
+### Option B — Vercel dashboard (Git-based)
+
+1. Push this project to a GitHub/GitLab/Bitbucket repository.
+2. Import it at [vercel.com/new](https://vercel.com/new) — Next.js is
+   auto-detected, no build settings to change.
+3. Under **Settings → Environment Variables**, add:
+   - `ANTHROPIC_API_KEY` (required for the Email Writer tool)
+   - `NEXT_PUBLIC_SITE_URL` (optional, recommended for correct SEO/OG tags —
+     e.g. `https://toolverse.yourdomain.com`)
+4. Click **Deploy**. Every push to your main branch redeploys automatically.
+
+---
+
+## Tech stack
+
+| Layer       | Choice                                   |
+|-------------|-------------------------------------------|
+| Framework   | Next.js 15 (App Router, Route Handlers)   |
+| Language    | TypeScript (strict mode)                  |
+| Styling     | Tailwind CSS + CSS variables (light/dark) |
+| Components  | shadcn/ui-style primitives + Radix UI     |
+| Icons       | lucide-react                              |
+| Validation  | zod                                       |
+| Toasts      | sonner                                    |
+| Theming     | next-themes                               |
+| AI          | Anthropic API (`@anthropic-ai/sdk`)       |
+
+---
+
+## License
+
+This project is provided as-is for your own use and modification.

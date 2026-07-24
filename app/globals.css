@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode — "writing desk" palette: linen paper + ink navy + brass accent */
+    --background: 42 32% 95%;
+    --foreground: 222 40% 15%;
+
+    --paper: 40 35% 98%;
+    --ink: 222 42% 16%;
+    --ink-light: 222 20% 42%;
+
+    --brass: 35 58% 46%;
+    --brass-light: 36 62% 66%;
+    --brass-dark: 32 55% 34%;
+
+    --primary: 35 58% 46%;
+    --primary-foreground: 222 45% 12%;
+
+    --secondary: 42 22% 90%;
+    --secondary-foreground: 222 35% 20%;
+
+    --muted: 42 18% 90%;
+    --muted-foreground: 222 15% 42%;
+
+    --accent: 35 45% 91%;
+    --accent-foreground: 222 40% 18%;
+
+    --destructive: 358 62% 46%;
+    --destructive-foreground: 40 30% 98%;
+
+    --success: 152 38% 30%;
+    --success-foreground: 40 30% 98%;
+
+    --card: 40 32% 97%;
+    --card-foreground: 222 40% 16%;
+
+    --popover: 40 32% 98%;
+    --popover-foreground: 222 40% 16%;
+
+    --border: 40 18% 84%;
+    --input: 40 18% 84%;
+    --ring: 35 58% 46%;
+
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    /* Dark mode — deep ink navy with warm brass foil accent */
+    --background: 222 38% 8%;
+    --foreground: 42 22% 92%;
+
+    --paper: 222 32% 11%;
+    --ink: 42 22% 92%;
+    --ink-light: 42 12% 68%;
+
+    --brass: 38 68% 60%;
+    --brass-light: 38 72% 72%;
+    --brass-dark: 34 55% 42%;
+
+    --primary: 38 68% 60%;
+    --primary-foreground: 222 45% 10%;
+
+    --secondary: 222 26% 15%;
+    --secondary-foreground: 42 20% 90%;
+
+    --muted: 222 22% 15%;
+    --muted-foreground: 42 10% 62%;
+
+    --accent: 222 26% 17%;
+    --accent-foreground: 38 60% 74%;
+
+    --destructive: 358 60% 52%;
+    --destructive-foreground: 40 25% 96%;
+
+    --success: 150 42% 46%;
+    --success-foreground: 222 40% 10%;
+
+    --card: 222 32% 10%;
+    --card-foreground: 42 22% 92%;
+
+    --popover: 222 32% 11%;
+    --popover-foreground: 42 22% 92%;
+
+    --border: 222 22% 20%;
+    --input: 222 22% 20%;
+    --ring: 38 68% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Visible keyboard focus everywhere — accessibility floor */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: hsl(var(--brass) / 0.25);
+  }
+}
+
+@layer utilities {
+  /* Deckle-edge paper effect used on the letter output card */
+  .deckle-edge {
+    position: relative;
+  }
+  .deckle-edge::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 6px;
+    top: -3px;
+    background-image: radial-gradient(
+      circle at 6px 3px,
+      transparent 3px,
+      hsl(var(--card)) 3.5px
+    );
+    background-size: 12px 6px;
+    background-repeat: repeat-x;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--brass) / 0.4) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--brass) / 0.4);
+    border-radius: 999px;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
